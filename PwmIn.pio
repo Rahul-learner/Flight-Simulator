@@ -1,0 +1,28 @@
+;
+; PwmIn.pio - PIO PWM pulse width reader for Raspberry Pi Pico
+; Measures the HIGH pulse width of RC receiver PWM channels in clock cycles.
+;
+
+.program PwmIn
+
+.wrap_target
+    mov x, ~null        ; Load 0xFFFFFFFF into register X (scratch counter)
+    wait 0 pin 0        ; Wait for the input pin to be LOW (ensure clean edge)
+    wait 1 pin 0        ; Wait for the rising edge (pin goes HIGH)
+timer_loop:
+    jmp x--, check_pin  ; Decrement X by 1
+check_pin:
+    jmp pin timer_loop  ; If pin is still HIGH, continue counting
+    mov isr, x          ; Pin went LOW: transfer counter value to ISR
+    push noblock        ; Push the measured ticks into RX FIFO without blocking
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline pio_sm_config PwmIn_program_get_default_config(uint offset) {
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + 0, offset + 6);
+    return c;
+}
+%}

@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>PicoFlight Mobile HUD</title>
+  <style>
+    :root {
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.4);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #050811;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "SF Pro Display", sans-serif;
+      color: var(--text);
+    }
+
+    /* Forced Orientation Classes for Screen Switching */
+    body.force-landscape {
+      position: absolute;
+      width: 100vh !important;
+      height: 100vw !important;
+      top: 0;
+      left: 0;
+      transform: rotate(90deg) translate(0, -100vw);
+      transform-origin: top left;
+      overflow: hidden;
+    }
+
+    body.force-portrait {
+      position: absolute;
+      width: 100vh !important;
+      height: 100vw !important;
+      top: 0;
+      left: 0;
+      transform: rotate(-90deg) translate(-100vh, 0);
+      transform-origin: top left;
+      overflow: hidden;
+    }
+
+    #glCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 1;
+    }
+
+    /* --- TOP-RIGHT MINIMALIST HUD (TRANSPARENT, NO BACKGROUND UI) --- */
+    .hud-top-right {
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 10px) + 10px);
+      right: calc(env(safe-area-inset-right, 12px) + 12px);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      background: transparent !important;
+      pointer-events: none;
+    }
+
+    .hud-block {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 2px 10px rgba(0, 0, 0, 0.75);
+    }
+
+    .hud-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 1px;
+    }
+
+    .hud-val-primary {
+      font-family: 'SF Mono', Consolas, Monaco, monospace;
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    .hud-unit {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-left: 2px;
+    }
+
+    .hud-val-sub {
+      font-family: 'SF Mono', Consolas, Monaco, monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: 1px;
+    }
+
+    .hud-attitude-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .hud-status-badge {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      font-family: 'SF Mono', monospace;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 6px var(--danger);
+    }
+
+    .status-dot.active {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    /* --- TOP-LEFT CONTROLS (DISCREET & TRANSPARENT) --- */
+    .hud-top-left {
+      position: absolute;
+      top: calc(env(safe-area-inset-top, 10px) + 10px);
+      left: calc(env(safe-area-inset-left, 12px) + 12px);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .icon-btn:active {
+      transform: scale(0.92);
+      background: rgba(56, 189, 248, 0.35);
+    }
+
+    .icon-btn svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 2;
+    }
+
+    .orient-badge {
+      font-size: 0.6rem;
+      font-weight: 800;
+      color: var(--accent);
+      margin-top: -2px;
+      font-family: monospace;
+    }
+
+    /* --- SETTINGS MODAL / SLIDE-IN DIALOG --- */
+    dialog#settingsDialog {
+      width: min(92vw, 420px);
+      max-height: 85vh;
+      margin: auto;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 20px;
+      background: rgba(11, 15, 25, 0.94);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: var(--text);
+      padding: 0;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.2);
+      outline: none;
+      z-index: 100;
+    }
+
+    dialog#settingsDialog::backdrop {
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    .dialog-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .dialog-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dialog-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.1rem;
+    }
+
+    .dialog-body {
+      padding: 16px 20px 24px;
+      overflow-y: auto;
+      max-height: calc(85vh - 70px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .settings-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .group-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+    }
+
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .segmented-control {
+      display: flex;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .seg-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .seg-btn.active {
+      background: var(--accent);
+      color: #0b0f19;
+      box-shadow: 0 2px 8px rgba(56, 189, 248, 0.4);
+    }
+
+    /* Toggle switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 24px;
+      transition: .2s;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      border-radius: 50%;
+      transition: .2s;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .action-btn:active {
+      background: var(--accent);
+      color: #0b0f19;
+    }
+
+    .desktop-link {
+      display: block;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-decoration: none;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Fullscreen WebGL 3D Canvas -->
+  <canvas id="glCanvas"></canvas>
+
+  <!-- Top-Left Action Icons (Discreet & Transparent) -->
+  <div class="hud-top-left">
+    <button id="btnSettings" class="icon-btn" title="Settings" aria-label="Open Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+    <button id="btnOrientToggle" class="icon-btn" title="Toggle Orientation (Auto/Landscape/Portrait)" aria-label="Toggle Orientation">
+      <div style="display:flex; flex-direction:column; align-items:center;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+          <line x1="12" y1="18" x2="12.01" y2="18"></line>
+        </svg>
+        <span id="orientBadge" class="orient-badge">AUTO</span>
+      </div>
+    </button>
+    <button id="btnTareHeading" class="icon-btn" title="Tare Heading (Zero Yaw)" aria-label="Tare Heading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Top-Right Transparent HUD (Altitude, Attitude, Heading ONLY) -->
+  <div class="hud-top-right">
+    <!-- 1. Altitude -->
+    <div class="hud-block">
+      <div class="hud-label">Altitude</div>
+      <div>
+        <span id="hudAlt" class="hud-val-primary">0.0</span>
+        <span id="hudAltUnit" class="hud-unit">m</span>
+      </div>
+      <div id="hudVsi" class="hud-val-sub">+0.00 m/s</div>
+    </div>
+
+    <!-- 2. Attitude (Roll & Pitch) -->
+    <div class="hud-block" style="margin-top: 4px;">
+      <div class="hud-label">Attitude</div>
+      <div class="hud-attitude-row">
+        <div>
+          <span style="font-size:0.7rem; color:var(--text-muted); font-weight:600;">R:</span>
+          <span id="hudRoll" class="hud-val-primary" style="font-size: 1.25rem;">0.0°</span>
+        </div>
+        <div>
+          <span style="font-size:0.7rem; color:var(--text-muted); font-weight:600;">P:</span>
+          <span id="hudPitch" class="hud-val-primary" style="font-size: 1.25rem;">0.0°</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Heading / Compass -->
+    <div class="hud-block" style="margin-top: 4px;">
+      <div class="hud-label">Heading</div>
+      <div>
+        <span id="hudYaw" class="hud-val-primary">000°</span>
+        <span id="hudCompassDir" class="hud-unit" style="color:var(--text-muted);">N</span>
+      </div>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="hud-status-badge">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusRate">0 Hz</span>
+    </div>
+  </div>
+
+  <!-- Settings Dialog (Modal with closedby=any for mobile back/tap dismiss) -->
+  <dialog id="settingsDialog" closedby="any" aria-labelledby="settingsTitle">
+    <div class="dialog-header">
+      <div id="settingsTitle" class="dialog-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        HUD Settings
+      </div>
+      <button id="btnCloseSettings" class="dialog-close" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="dialog-body">
+      <!-- Screen Orientation -->
+      <div class="settings-group">
+        <div class="group-title">Display Orientation</div>
+        <div class="segmented-control">
+          <button class="seg-btn active" data-orient="auto">Auto</button>
+          <button class="seg-btn" data-orient="portrait">Portrait</button>
+          <button class="seg-btn" data-orient="landscape">Landscape</button>
+        </div>
+      </div>
+
+      <!-- Unit Selection -->
+      <div class="settings-group">
+        <div class="group-title">Measurement Units</div>
+        <div class="segmented-control">
+          <button class="seg-btn active" data-unit="metric">Metric (m)</button>
+          <button class="seg-btn" data-unit="imperial">Imperial (ft)</button>
+        </div>
+      </div>
+
+      <!-- Sensor Alignment & Axis Inversions -->
+      <div class="settings-group">
+        <div class="group-title">Sensor Orientation & Inversions</div>
+        <div class="setting-row">
+          <span>Swap Pitch & Roll</span>
+          <label class="switch">
+            <input type="checkbox" id="chkModalSwap">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span>Invert Pitch Axis</span>
+          <label class="switch">
+            <input type="checkbox" id="chkModalInvP">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span>Invert Roll Axis</span>
+          <label class="switch">
+            <input type="checkbox" id="chkModalInvR">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span>Invert Yaw Axis</span>
+          <label class="switch">
+            <input type="checkbox" id="chkModalInvY">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Display Options -->
+      <div class="settings-group">
+        <div class="group-title">3D View Features</div>
+        <div class="setting-row">
+          <span>Ground Grid</span>
+          <label class="switch">
+            <input type="checkbox" id="chkModalGrid" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span>Spin Propeller</span>
+          <label class="switch">
+            <input type="checkbox" id="chkModalProp" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Calibration Actions -->
+      <div class="settings-group">
+        <div class="group-title">Sensor Calibration</div>
+        <button id="btnModalTare" class="action-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+          Tare Heading (Zero Yaw)
+        </button>
+        <button id="btnModalCalib" class="action-btn" style="background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>
+          Recalibrate Sensors
+        </button>
+      </div>
+
+      <a href="/" class="desktop-link">Switch to Full Desktop Flight Deck &rarr;</a>
+    </div>
+  </dialog>
+
+  <!-- Self-Contained WebGL 3D Aircraft & Telemetry Script -->
+  <script>
+    // --- Application State ---
+    const telemetry = {
+      roll: 0.0,
+      pitch: 0.0,
+      yaw: 0.0,
+      alt: 0.0,
+      vsi: 0.0,
+      prs: 1013.2,
+      dt: 0.0005,
+      lastPacketTime: 0,
+      packetCount: 0,
+      packetsPerSec: 0
+    };
+
+    const config = {
+      orientation: 'auto', // 'auto', 'portrait', 'landscape'
+      unit: 'metric',      // 'metric' (m), 'imperial' (ft)
+      swapPitchRoll: false,
+      invPitch: false,
+      invRoll: false,
+      invYaw: false,
+      showGrid: true,
+      spinProp: true,
+      tareYawOffset: 0.0
+    };
+
+    // Load saved preferences from localStorage
+    try {
+      const saved = localStorage.getItem('pico_mobile_cfg');
+      if (saved) Object.assign(config, JSON.parse(saved));
+    } catch(e) {}
+
+    function saveConfig() {
+      try { localStorage.setItem('pico_mobile_cfg', JSON.stringify(config)); } catch(e) {}
+    }
+
+    // --- DOM Elements ---
+    const canvas = document.getElementById('glCanvas');
+    const hudAlt = document.getElementById('hudAlt');
+    const hudAltUnit = document.getElementById('hudAltUnit');
+    const hudVsi = document.getElementById('hudVsi');
+    const hudRoll = document.getElementById('hudRoll');
+    const hudPitch = document.getElementById('hudPitch');
+    const hudYaw = document.getElementById('hudYaw');
+    const hudCompassDir = document.getElementById('hudCompassDir');
+    const statusDot = document.getElementById('statusDot');
+    const statusRate = document.getElementById('statusRate');
+    const orientBadge = document.getElementById('orientBadge');
+
+    const btnSettings = document.getElementById('btnSettings');
+    const btnOrientToggle = document.getElementById('btnOrientToggle');
+    const btnTareHeading = document.getElementById('btnTareHeading');
+    const settingsDialog = document.getElementById('settingsDialog');
+    const btnCloseSettings = document.getElementById('btnCloseSettings');
+
+    const chkModalSwap = document.getElementById('chkModalSwap');
+    const chkModalInvP = document.getElementById('chkModalInvP');
+    const chkModalInvR = document.getElementById('chkModalInvR');
+    const chkModalInvY = document.getElementById('chkModalInvY');
+    const chkModalGrid = document.getElementById('chkModalGrid');
+    const chkModalProp = document.getElementById('chkModalProp');
+    const btnModalTare = document.getElementById('btnModalTare');
+    const btnModalCalib = document.getElementById('btnModalCalib');
+
+    // --- Orientation Management ---
+    function setOrientation(mode) {
+      config.orientation = mode;
+      saveConfig();
+
+      document.body.classList.remove('force-landscape', 'force-portrait');
+      if (mode === 'landscape') {
+        document.body.classList.add('force-landscape');
+        orientBadge.innerText = 'LAND';
+      } else if (mode === 'portrait') {
+        document.body.classList.add('force-portrait');
+        orientBadge.innerText = 'PORT';
+      } else {
+        orientBadge.innerText = 'AUTO';
+      }
+
+      // Update dialog segmented buttons
+      document.querySelectorAll('[data-orient]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.orient === mode);
+      });
+
+      // Try browser Native Screen Orientation Lock API if available
+      try {
+        if (mode === 'landscape' && screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        } else if (mode === 'portrait' && screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('portrait').catch(() => {});
+        } else if (screen.orientation && screen.orientation.unlock) {
+          screen.orientation.unlock().catch(() => {});
+        }
+      } catch(e) {}
+
+      setTimeout(resizeCanvas, 50);
+    }
+
+    btnOrientToggle.addEventListener('click', () => {
+      const modes = ['auto', 'landscape', 'portrait'];
+      const next = modes[(modes.indexOf(config.orientation) + 1) % modes.length];
+      setOrientation(next);
+    });
+
+    document.querySelectorAll('[data-orient]').forEach(btn => {
+      btn.addEventListener('click', (e) => setOrientation(e.target.dataset.orient));
+    });
+
+    // --- Unit Selection ---
+    function setUnit(unit) {
+      config.unit = unit;
+      saveConfig();
+      document.querySelectorAll('[data-unit]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.unit === unit);
+      });
+      hudAltUnit.innerText = unit === 'imperial' ? 'ft' : 'm';
+    }
+
+    document.querySelectorAll('[data-unit]').forEach(btn => {
+      btn.addEventListener('click', (e) => setUnit(e.target.dataset.unit));
+    });
+
+    // --- Settings Dialog & Toggles ---
+    function syncSettingsUI() {
+      chkModalSwap.checked = config.swapPitchRoll;
+      chkModalInvP.checked = config.invPitch;
+      chkModalInvR.checked = config.invRoll;
+      chkModalInvY.checked = config.invYaw;
+      chkModalGrid.checked = config.showGrid;
+      chkModalProp.checked = config.spinProp;
+      setOrientation(config.orientation);
+      setUnit(config.unit);
+    }
+
+    btnSettings.addEventListener('click', () => {
+      syncSettingsUI();
+      settingsDialog.showModal();
+    });
+
+    btnCloseSettings.addEventListener('click', () => settingsDialog.close());
+
+    chkModalSwap.addEventListener('change', (e) => { config.swapPitchRoll = e.target.checked; saveConfig(); });
+    chkModalInvP.addEventListener('change', (e) => { config.invPitch = e.target.checked; saveConfig(); });
+    chkModalInvR.addEventListener('change', (e) => { config.invRoll = e.target.checked; saveConfig(); });
+    chkModalInvY.addEventListener('change', (e) => { config.invYaw = e.target.checked; saveConfig(); });
+    chkModalGrid.addEventListener('change', (e) => { config.showGrid = e.target.checked; saveConfig(); });
+    chkModalProp.addEventListener('change', (e) => { config.spinProp = e.target.checked; saveConfig(); });
+
+    function tareHeading() {
+      config.tareYawOffset = telemetry.yaw;
+      saveConfig();
+      fetch('/tare').catch(() => {});
+    }
+
+    btnTareHeading.addEventListener('click', tareHeading);
+    btnModalTare.addEventListener('click', () => { tareHeading(); settingsDialog.close(); });
+    btnModalCalib.addEventListener('click', () => { fetch('/calib').catch(() => {}); settingsDialog.close(); });
+
+    // --- Compass Cardinal Direction Helper ---
+    function getCardinal(deg) {
+      const d = ((deg % 360) + 360) % 360;
+      const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+      return dirs[Math.round(d / 22.5) % 16];
+    }
+
+    // --- WebGL 3D Engine Setup ---
+    const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+    if (!gl) alert('WebGL not supported on this browser.');
+
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 100));
+
+    // --- Camera & Touch Orbit Controls ---
+    const camera = {
+      orbitYaw: -0.35,
+      orbitPitch: 0.28,
+      distance: 6.8,
+      target: [0, 0, 0]
+    };
+
+    let touchStartX = 0, touchStartY = 0;
+    let initialPinchDist = null;
+    let lastTapTime = 0;
+
+    window.addEventListener('touchstart', (e) => {
+      if (e.target.closest('#settingsDialog') || e.target.closest('.icon-btn')) return;
+      if (e.touches.length === 1) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          // Double-tap resets camera
+          camera.orbitYaw = -0.35;
+          camera.orbitPitch = 0.28;
+          camera.distance = 6.8;
+        }
+        lastTapTime = now;
+      } else if (e.touches.length === 2) {
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.target.closest('#settingsDialog')) return;
+      if (e.touches.length === 1) {
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+
+        camera.orbitYaw -= dx * 0.007;
+        camera.orbitPitch = Math.max(-0.6, Math.min(1.4, camera.orbitPitch + dy * 0.007));
+      } else if (e.touches.length === 2 && initialPinchDist) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = initialPinchDist / dist;
+        camera.distance = Math.max(3.0, Math.min(18.0, camera.distance * factor));
+        initialPinchDist = dist;
+      }
+    }, { passive: true });
+
+    // --- WebGL Shaders & Geometry ---
+    const vsSource = `
+      attribute vec3 aPosition;
+      attribute vec3 aNormal;
+      attribute vec4 aColor;
+
+      uniform mat4 uProjection;
+      uniform mat4 uView;
+      uniform mat4 uModel;
+
+      varying vec3 vNormal;
+      varying vec3 vFragPos;
+      varying vec4 vColor;
+
+      void main(void) {
+        vec4 worldPos = uModel * vec4(aPosition, 1.0);
+        vFragPos = worldPos.xyz;
+        vNormal = mat3(uModel) * aNormal;
+        vColor = aColor;
+        gl_Position = uProjection * uView * worldPos;
+      }
+    `;
+
+    const fsSource = `
+      precision mediump float;
+
+      varying vec3 vNormal;
+      varying vec3 vFragPos;
+      varying vec4 vColor;
+
+      uniform vec3 uLightDir;
+      uniform vec3 uViewPos;
+
+      void main(void) {
+        vec3 norm = normalize(vNormal);
+        vec3 lightDir = normalize(uLightDir);
+        float diff = max(dot(norm, lightDir), 0.0);
+
+        vec3 viewDir = normalize(uViewPos - vFragPos);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
+
+        vec3 ambient = vec3(0.25, 0.28, 0.35) * vColor.rgb;
+        vec3 diffuse = vec3(0.85, 0.88, 0.95) * diff * vColor.rgb;
+        vec3 specular = vec3(0.35) * spec;
+
+        gl_FragColor = vec4(ambient + diffuse + specular, vColor.a);
+      }
+    `;
+
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      return shader;
+    }
+
+    const program = gl.createProgram();
+    gl.attachShader(program, createShader(gl, gl.VERTEX_SHADER, vsSource));
+    gl.attachShader(program, createShader(gl, gl.FRAGMENT_SHADER, fsSource));
+    gl.linkProgram(program);
+
+    const programInfo = {
+      program: program,
+      attribs: {
+        position: gl.getAttribLocation(program, 'aPosition'),
+        normal: gl.getAttribLocation(program, 'aNormal'),
+        color: gl.getAttribLocation(program, 'aColor')
+      },
+      uniforms: {
+        projection: gl.getUniformLocation(program, 'uProjection'),
+        view: gl.getUniformLocation(program, 'uView'),
+        model: gl.getUniformLocation(program, 'uModel'),
+        lightDir: gl.getUniformLocation(program, 'uLightDir'),
+        viewPos: gl.getUniformLocation(program, 'uViewPos')
+      }
+    };
+
+    // Mesh Builders
+    function buildAircraftMesh() {
+      const vertices = [], normals = [], colors = [];
+      function addTriangle(p1, p2, p3, n, c) {
+        vertices.push(...p1, ...p2, ...p3);
+        normals.push(...n, ...n, ...n);
+        colors.push(...c, ...c, ...c);
+      }
+      function addQuad(p1, p2, p3, p4, n, c) {
+        addTriangle(p1, p2, p3, n, c);
+        addTriangle(p1, p3, p4, n, c);
+      }
+
+      const cFuselage = [0.88, 0.90, 0.95, 1.0];
+      const cNose = [0.08, 0.12, 0.20, 1.0];
+      const cCanopy = [0.12, 0.55, 0.90, 0.95];
+      const cWings = [0.80, 0.83, 0.90, 1.0];
+      const cAileron = [0.08, 0.65, 0.92, 1.0];
+      const cFin = [0.08, 0.65, 0.92, 1.0];
+      const cNavRed = [1.0, 0.1, 0.1, 1.0];
+      const cNavGreen = [0.1, 1.0, 0.2, 1.0];
+
+      // Fuselage
+      const fR = 0.35, segments = 8;
+      const ringNose = [0, 0, 1.6];
+      const ringMidFwd = [], ringMidAft = [];
+      const ringTail = [0, 0, -1.8];
+
+      for (let i = 0; i < segments; i++) {
+        const theta = (i / segments) * Math.PI * 2;
+        const x = Math.cos(theta) * fR;
+        const y = Math.sin(theta) * fR * 0.85;
+        ringMidFwd.push([x, y + 0.05, 0.8]);
+        ringMidAft.push([x * 0.8, y * 0.75 + 0.05, -0.9]);
+      }
+
+      for (let i = 0; i < segments; i++) {
+        const next = (i + 1) % segments;
+        addTriangle(ringNose, ringMidFwd[i], ringMidFwd[next], [ringMidFwd[i][0], ringMidFwd[i][1], 0.7], cNose);
+        addQuad(ringMidFwd[i], ringMidAft[i], ringMidAft[next], ringMidFwd[next], [ringMidFwd[i][0], ringMidFwd[i][1], 0.0], cFuselage);
+        addTriangle(ringTail, ringMidAft[next], ringMidAft[i], [ringMidAft[i][0], ringMidAft[i][1], -0.6], cFuselage);
+      }
+
+      // Canopy
+      addQuad([-0.18, 0.32, 0.7], [0.18, 0.32, 0.7], [0.15, 0.42, 0.2], [-0.15, 0.42, 0.2], [0, 1, 0.4], cCanopy);
+      addQuad([-0.15, 0.42, 0.2], [0.15, 0.42, 0.2], [0.12, 0.30, -0.4], [-0.12, 0.30, -0.4], [0, 1, -0.2], cCanopy);
+
+      // Main Wings
+      const wingSpan = 3.6, wingChordRoot = 0.95, wingChordTip = 0.40, sweepBack = 0.45;
+      // Port wing
+      addQuad([-0.3, 0.05, 0.4], [-wingSpan, 0.15, 0.4 - sweepBack], [-wingSpan, 0.15, 0.4 - sweepBack - wingChordTip], [-0.3, 0.05, 0.4 - wingChordRoot], [0, 1, 0], cWings);
+      addQuad([-0.3, 0.0, 0.4 - wingChordRoot], [-wingSpan, 0.1, 0.4 - sweepBack - wingChordTip], [-wingSpan, 0.1, 0.4 - sweepBack], [-0.3, 0.0, 0.4], [0, -1, 0], cAileron);
+      addTriangle([-wingSpan, 0.15, 0.4 - sweepBack], [-wingSpan - 0.05, 0.45, 0.4 - sweepBack - 0.1], [-wingSpan, 0.15, 0.4 - sweepBack - wingChordTip], [-1, 0.5, 0], cNavRed);
+
+      // Starboard wing
+      addQuad([0.3, 0.05, 0.4], [0.3, 0.05, 0.4 - wingChordRoot], [wingSpan, 0.15, 0.4 - sweepBack - wingChordTip], [wingSpan, 0.15, 0.4 - sweepBack], [0, 1, 0], cWings);
+      addQuad([0.3, 0.0, 0.4], [wingSpan, 0.1, 0.4 - sweepBack], [wingSpan, 0.1, 0.4 - sweepBack - wingChordTip], [0.3, 0.0, 0.4 - wingChordRoot], [0, -1, 0], cAileron);
+      addTriangle([wingSpan, 0.15, 0.4 - sweepBack], [wingSpan, 0.15, 0.4 - sweepBack - wingChordTip], [wingSpan + 0.05, 0.45, 0.4 - sweepBack - 0.1], [1, 0.5, 0], cNavGreen);
+
+      // Horizontal Stabilizer
+      const tSpan = 1.35, tRoot = 0.55, tTip = 0.25;
+      addQuad([-0.15, 0.1, -1.4], [-tSpan, 0.1, -1.6], [-tSpan, 0.1, -1.6 - tTip], [-0.15, 0.1, -1.4 - tRoot], [0, 1, 0], cWings);
+      addQuad([0.15, 0.1, -1.4], [0.15, 0.1, -1.4 - tRoot], [tSpan, 0.1, -1.6 - tTip], [tSpan, 0.1, -1.6], [0, 1, 0], cWings);
+
+      // Vertical Fin
+      const fH = 1.1;
+      addTriangle([-0.03, 0.25, -1.2], [-0.01, fH, -1.65], [-0.01, fH, -1.8], [-1, 0, 0], cFin);
+      addTriangle([0.03, 0.25, -1.2], [0.01, fH, -1.8], [0.01, fH, -1.65], [1, 0, 0], cFin);
+
+      return {
+        positions: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        colors: new Float32Array(colors),
+        count: vertices.length / 3
+      };
+    }
+
+    function buildPropellerMesh() {
+      const vertices = [], normals = [], colors = [];
+      const cBlade = [0.95, 0.95, 0.95, 0.9];
+      const cHub = [0.1, 0.1, 0.1, 1.0];
+      const bL = 1.15, bW = 0.12;
+
+      // Hub
+      vertices.push(
+        -0.08, -0.08, 1.62,  0.08, -0.08, 1.62,  0.0, 0.1, 1.62,
+        -0.08, 0.08, 1.62,   0.08, 0.08, 1.62,   0.0, -0.1, 1.62
+      );
+      normals.push(0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1);
+      colors.push(...cHub, ...cHub, ...cHub, ...cHub, ...cHub, ...cHub);
+
+      // 2 Blades
+      vertices.push(
+        -bW*0.5, 0.05, 1.61,  bW*0.5, 0.05, 1.61,  0.0, bL, 1.60,
+        bW*0.5, -0.05, 1.61, -bW*0.5, -0.05, 1.61, 0.0, -bL, 1.60
+      );
+      normals.push(0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1);
+      colors.push(...cBlade, ...cBlade, ...cBlade, ...cBlade, ...cBlade, ...cBlade);
+
+      return {
+        positions: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        colors: new Float32Array(colors),
+        count: vertices.length / 3
+      };
+    }
+
+    function buildGroundGridMesh() {
+      const vertices = [], normals = [], colors = [];
+      const size = 30, step = 2.0;
+      const cGrid = [0.20, 0.35, 0.55, 0.35];
+
+      for (let x = -size; x <= size; x += step) {
+        vertices.push(x, -2.5, -size,  x, -2.5, size);
+        normals.push(0, 1, 0,  0, 1, 0);
+        colors.push(...cGrid, ...cGrid);
+      }
+      for (let z = -size; z <= size; z += step) {
+        vertices.push(-size, -2.5, z,  size, -2.5, z);
+        normals.push(0, 1, 0,  0, 1, 0);
+        colors.push(...cGrid, ...cGrid);
+      }
+
+      return {
+        positions: new Float32Array(vertices),
+        normals: new Float32Array(normals),
+        colors: new Float32Array(colors),
+        count: vertices.length / 3
+      };
+    }
+
+    function createGLBuffer(data) {
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      return buf;
+    }
+
+    const planeData = buildAircraftMesh();
+    const planeBuffers = {
+      pos: createGLBuffer(planeData.positions),
+      nor: createGLBuffer(planeData.normals),
+      col: createGLBuffer(planeData.colors),
+      count: planeData.count
+    };
+
+    const propData = buildPropellerMesh();
+    const propBuffers = {
+      pos: createGLBuffer(propData.positions),
+      nor: createGLBuffer(propData.normals),
+      col: createGLBuffer(propData.colors),
+      count: propData.count
+    };
+
+    const gridData = buildGroundGridMesh();
+    const gridBuffers = {
+      pos: createGLBuffer(gridData.positions),
+      nor: createGLBuffer(gridData.normals),
+      col: createGLBuffer(gridData.colors),
+      count: gridData.count
+    };
+
+    // --- Matrix Math Helpers ---
+    const Mat4 = {
+      create() { return new Float32Array(16); },
+      perspective(out, fovy, aspect, near, far) {
+        const f = 1.0 / Math.tan(fovy / 2);
+        out[0] = f / aspect; out[1] = 0; out[2] = 0; out[3] = 0;
+        out[4] = 0; out[5] = f; out[6] = 0; out[7] = 0;
+        out[8] = 0; out[9] = 0; out[10] = (far + near) / (near - far); out[11] = -1;
+        out[12] = 0; out[13] = 0; out[14] = (2 * far * near) / (near - far); out[15] = 0;
+        return out;
+      },
+      lookAt(out, eye, center, up) {
+        let x0, x1, x2, y0, y1, y2, z0, z1, z2, len;
+        let eyex = eye[0], eyey = eye[1], eyez = eye[2];
+        let upx = up[0], upy = up[1], upz = up[2];
+        let centerx = center[0], centery = center[1], centerz = center[2];
+
+        z0 = eyex - centerx; z1 = eyey - centery; z2 = eyez - centerz;
+        len = 1 / Math.hypot(z0, z1, z2);
+        z0 *= len; z1 *= len; z2 *= len;
+
+        x0 = upy * z2 - upz * z1; x1 = upz * z0 - upx * z2; x2 = upx * z1 - upy * z0;
+        len = 1 / Math.hypot(x0, x1, x2);
+        x0 *= len; x1 *= len; x2 *= len;
+
+        y0 = z1 * x2 - z2 * x1; y1 = z2 * x0 - z0 * x2; y2 = z0 * x1 - z1 * x0;
+
+        out[0] = x0; out[1] = y0; out[2] = z0; out[3] = 0;
+        out[4] = x1; out[5] = y1; out[6] = z1; out[7] = 0;
+        out[8] = x2; out[9] = y2; out[10] = z2; out[11] = 0;
+        out[12] = -(x0 * eyex + x1 * eyey + x2 * eyez);
+        out[13] = -(y0 * eyex + y1 * eyey + y2 * eyez);
+        out[14] = -(z0 * eyex + z1 * eyey + z2 * eyez);
+        out[15] = 1;
+        return out;
+      },
+      fromRotationTranslation(out, q, v) {
+        let x = q[1], y = q[2], z = q[3], w = q[0];
+        let x2 = x + x, y2 = y + y, z2 = z + z;
+        let xx = x * x2, xy = x * y2, xz = x * z2;
+        let yy = y * y2, yz = y * z2, zz = z * z2;
+        let wx = w * x2, wy = w * y2, wz = w * z2;
+
+        out[0] = 1 - (yy + zz); out[1] = xy + wz; out[2] = xz - wy; out[3] = 0;
+        out[4] = xy - wz; out[5] = 1 - (xx + zz); out[6] = yz + wx; out[7] = 0;
+        out[8] = xz + wy; out[9] = yz - wx; out[10] = 1 - (xx + yy); out[11] = 0;
+        out[12] = v[0]; out[13] = v[1]; out[14] = v[2]; out[15] = 1;
+        return out;
+      },
+      multiply(out, a, b) {
+        let a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+        let a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+        let a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+        let a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+        let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
+        out[0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+        out[1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+        out[2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+        out[3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
+        out[4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+        out[5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+        out[6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+        out[7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
+        out[8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+        out[9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+        out[10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+        out[11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
+        out[12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
+        out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
+        out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
+        out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
+        return out;
+      }
+    };
+
+    // Helper: Convert Euler angles (in radians) to Aircraft 3D Quaternion [w, x, y, z]
+    // In our WebGL aircraft model:
+    // - Wings are along X axis -> Pitch (tilt nose up/down) rotates around X
+    // - Vertical is along Y axis -> Yaw (turn heading left/right) rotates around Y
+    // - Fuselage is along Z axis -> Roll (bank wings left/right) rotates around Z
+    function eulerToQuaternion(roll, pitch, yaw) {
+      const cr = Math.cos(roll * 0.5);
+      const sr = Math.sin(roll * 0.5);
+      const cp = Math.cos(pitch * 0.5);
+      const sp = Math.sin(pitch * 0.5);
+      const cy = Math.cos(yaw * 0.5);
+      const sy = Math.sin(yaw * 0.5);
+
+      const w1 = cp * cr;
+      const x1 = sp * cr;
+      const y1 = -sp * sr;
+      const z1 = cp * sr;
+
+      return [
+        cy * w1 - sy * y1,
+        cy * x1 + sy * z1,
+        cy * y1 + sy * w1,
+        cy * z1 - sy * x1
+      ];
+    }
+
+    // --- Render Loop ---
+    let propAngle = 0;
+    const pMatrix = Mat4.create();
+    const vMatrix = Mat4.create();
+    const mMatrix = Mat4.create();
+
+    function drawMesh(buffers, modelMat, primitiveType = gl.TRIANGLES) {
+      gl.useProgram(programInfo.program);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.pos);
+      gl.vertexAttribPointer(programInfo.attribs.position, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(programInfo.attribs.position);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.nor);
+      gl.vertexAttribPointer(programInfo.attribs.normal, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(programInfo.attribs.normal);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.col);
+      gl.vertexAttribPointer(programInfo.attribs.color, 4, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(programInfo.attribs.color);
+
+      gl.uniformMatrix4fv(programInfo.uniforms.projection, false, pMatrix);
+      gl.uniformMatrix4fv(programInfo.uniforms.view, false, vMatrix);
+      gl.uniformMatrix4fv(programInfo.uniforms.model, false, modelMat);
+
+      gl.drawArrays(primitiveType, 0, buffers.count);
+    }
+
+    let lastFpsUpdate = Date.now();
+    let framesThisSecond = 0;
+
+    function render() {
+      // 1. Calculate Packet Rate & Active State
+      const now = Date.now();
+      framesThisSecond++;
+      if (now - lastFpsUpdate >= 1000) {
+        telemetry.packetsPerSec = telemetry.packetCount;
+        telemetry.packetCount = 0;
+        lastFpsUpdate = now;
+        statusRate.innerText = `${telemetry.packetsPerSec} Hz`;
+        const active = (now - telemetry.lastPacketTime < 1500);
+        statusDot.classList.toggle('active', active);
+      }
+
+      // 2. Compute Display Angles with Swap & Inversions
+      let r = telemetry.roll;
+      let p = telemetry.pitch;
+      let y = telemetry.yaw;
+
+      if (config.swapPitchRoll) {
+        const tmp = r;
+        r = p;
+        p = tmp;
+      }
+
+      let displayRoll = r * (config.invRoll ? -1 : 1);
+      let displayPitch = p * (config.invPitch ? -1 : 1);
+      let displayYaw = (y - config.tareYawOffset) * (config.invYaw ? -1 : 1);
+      displayYaw = ((displayYaw % 360) + 360) % 360;
+
+      // 3. Update HUD Text Displays (Top-Right Transparent HUD)
+      let altVal = telemetry.alt;
+      let vsiVal = telemetry.vsi;
+      if (config.unit === 'imperial') {
+        altVal *= 3.28084; // meters to feet
+        vsiVal *= 3.28084;
+        hudAlt.innerText = altVal.toFixed(1);
+        hudAltUnit.innerText = 'ft';
+        hudVsi.innerText = `${vsiVal >= 0 ? '+' : ''}${vsiVal.toFixed(1)} ft/s`;
+      } else {
+        hudAlt.innerText = altVal.toFixed(1);
+        hudAltUnit.innerText = 'm';
+        hudVsi.innerText = `${vsiVal >= 0 ? '+' : ''}${vsiVal.toFixed(2)} m/s`;
+      }
+
+      hudRoll.innerText = `${displayRoll >= 0 ? '+' : ''}${displayRoll.toFixed(1)}°`;
+      hudPitch.innerText = `${displayPitch >= 0 ? '+' : ''}${displayPitch.toFixed(1)}°`;
+      hudYaw.innerText = `${Math.round(displayYaw).toString().padStart(3, '0')}°`;
+      hudCompassDir.innerText = getCardinal(displayYaw);
+
+      // 4. WebGL Render Pass
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.clearColor(0.02, 0.03, 0.07, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      // Perspective Projection
+      const aspect = canvas.width / canvas.height;
+      Mat4.perspective(pMatrix, 45 * Math.PI / 180, aspect, 0.1, 100.0);
+
+      // Orbit Camera Setup
+      const cy = Math.cos(camera.orbitYaw);
+      const sy = Math.sin(camera.orbitYaw);
+      const cp = Math.cos(camera.orbitPitch);
+      const sp = Math.sin(camera.orbitPitch);
+
+      const eyeX = camera.distance * cp * sy;
+      const eyeY = camera.distance * sp;
+      const eyeZ = camera.distance * cp * cy;
+      Mat4.lookAt(vMatrix, [eyeX, eyeY, eyeZ], camera.target, [0, 1, 0]);
+
+      gl.uniform3f(programInfo.uniforms.lightDir, 0.6, 1.0, 0.8);
+      gl.uniform3f(programInfo.uniforms.viewPos, eyeX, eyeY, eyeZ);
+
+      // Ground Grid
+      if (config.showGrid) {
+        const gridModel = Mat4.create();
+        Mat4.fromRotationTranslation(gridModel, [1, 0, 0, 0], [0, 0, 0]);
+        drawMesh(gridBuffers, gridModel, gl.LINES);
+      }
+
+      // Aircraft Model
+      const qAttitude = eulerToQuaternion(
+        displayRoll * Math.PI / 180,
+        -displayPitch * Math.PI / 180,
+        -displayYaw * Math.PI / 180
+      );
+      Mat4.fromRotationTranslation(mMatrix, qAttitude, [0, 0, 0]);
+      drawMesh(planeBuffers, mMatrix);
+
+      // Spinning Propeller
+      if (config.spinProp) {
+        propAngle += 0.45;
+        const qPropSpin = [Math.cos(propAngle * 0.5), 0, 0, Math.sin(propAngle * 0.5)];
+        const propModel = Mat4.create();
+        Mat4.fromRotationTranslation(propModel, qPropSpin, [0, 0, 0]);
+        const combinedProp = Mat4.create();
+        Mat4.multiply(combinedProp, mMatrix, propModel);
+        drawMesh(propBuffers, combinedProp);
+      }
+
+      requestAnimationFrame(render);
+    }
+
+    // --- WebSocket Telemetry Stream ---
+    function connectWebSocket() {
+      const wsUrl = `ws://${window.location.hostname}:81/`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        statusDot.classList.add('active');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.r !== undefined && data.p !== undefined) {
+            telemetry.roll = data.r;
+            telemetry.pitch = data.p;
+            telemetry.yaw = data.y;
+            if (data.alt !== undefined) telemetry.alt = data.alt;
+            if (data.vsi !== undefined) telemetry.vsi = data.vsi;
+            if (data.prs !== undefined) telemetry.prs = data.prs;
+            if (data.dt !== undefined) telemetry.dt = data.dt;
+
+            telemetry.lastPacketTime = Date.now();
+            telemetry.packetCount++;
+          }
+        } catch(e) {}
+      };
+
+      ws.onclose = () => {
+        statusDot.classList.remove('active');
+        setTimeout(connectWebSocket, 1500);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    // Initialize
+    syncSettingsUI();
+    resizeCanvas();
+    connectWebSocket();
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
